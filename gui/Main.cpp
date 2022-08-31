@@ -155,6 +155,9 @@ class serial {
 	HANDLE arduino = 0;
 	
 public:
+	/// @brief arduinoとの通信の初期化
+	/// @param com 使用するCOMポート
+	/// @return 初期化に成功したか
 	bool init(String com) {
 		bool Ret;
 		ClearPrint();
@@ -164,14 +167,13 @@ public:
 		//1.ポートをオープン
 		auto wcom = com.toWstr();
 		LPCWSTR _com = wcom.c_str();
-
 		arduino = CreateFile(_com, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-		//2014/01/22追記　これでつながらない場合には"\\\\.\\COM7"とするとつながるかもしれません。
 
 		if (arduino == INVALID_HANDLE_VALUE) {
 			Print << U"PORT COULD NOT OPEN";
 			return false;
 		}
+
 		//2.送受信バッファ初期化
 		Ret = SetupComm(arduino, 1024, 1024);
 		if (!Ret) {
@@ -185,6 +187,7 @@ public:
 			CloseHandle(arduino);
 			return false;
 		}
+
 		//3.基本通信条件の設定
 		DCB dcb;
 		GetCommState(arduino, &dcb);
@@ -205,6 +208,9 @@ public:
 		return true;
 	}
 
+	/// @brief arduinoにデータを送る
+	/// @param data 送るデータ(BYTE)
+	/// @return 遅れたか
 	bool send(BYTE data) {
 		DWORD dwSendSize;
 		if (!WriteFile(arduino, &data, sizeof(data), &dwSendSize, NULL)) {
@@ -215,70 +221,109 @@ public:
 		}
 		return true;
 	}
+
+	/// @brief arduinoとの通信を終了する
+	/// @return 終了できたか
+	bool close() {
+		return CloseHandle(arduino);
+	}
 };
 
 void Main() {
-	
+
 	Scene::SetBackground(ColorF{ 0.8, 0.9, 1.0 });
-	HSV color0;
 
-	serial arduino;
+	// 表示する色
+	HSV colorHSV{1.0,0.0,1.0};
+	ColorF colorRGB{ 1.0 };
 
-	ColorF color1{ 1.0 };
+	// 点灯のインターバル
 	double interval = 0.5;
 
-	bool sl = false, cp = false;
+	// 色を変えたかのフラグ
+	bool slider_flag = false, picker_flag = false;
 
+	// arduinoとのシリアル通信
+	serial arduino;
+
+	// COM選択のプルダウン
+	size_t com_port = 0;
 	const Font font{ 12 };
 	const Array<String> items = { U"COM0", U"COM1", U"COM2", U"COM3", U"COM4", U"COM5", U"COM6", U"COM7", U"COM8", U"COM9", U"COM10", U"COM11", U"COM12" };
+	bool serial_flag = false;
+	for (auto&& i : Range(0, 12)) { // 通信できるポートを探索
+		if (serial_flag = arduino.init(items[i])) {
+			com_port = i;
+			break;
+		}
+	}
+
 	Pulldown pulldown{ items, font, Point{ 8, 8 } };
-	pulldown.setIndex(3);
-	uint16 com_port = 3;
-	bool serial_flag = arduino.init(U"COM3");
+	pulldown.setIndex(com_port);
+	
+	if (serial_flag) {
+		arduino.send(0);
+		arduino.send(64);
+		arduino.send(64);
+		arduino.send(64);
+	}
+
 	while (System::Update()) {
-		//ClearPrint();
 		pulldown.update();
-		
+
+		// COMを変えたら通信の初期化
 		if (com_port != pulldown.getIndex()) {
 			com_port = pulldown.getIndex();
 			serial_flag = arduino.init(pulldown.getItem());
 		}
 
-		if (SimpleGUI::Slider(U"赤{:.0f}"_fmt(color1.r * 255), color1.r, Vec2{ 50, 160 }, 100, 600)) sl = true;
-		if (SimpleGUI::Slider(U"緑{:.0f}"_fmt(color1.g * 255), color1.g, Vec2{ 50, 200 }, 100, 600)) sl = true;
-		if (SimpleGUI::Slider(U"青{:.0f}"_fmt(color1.b * 255), color1.b, Vec2{ 50, 240 }, 100, 600)) sl = true;
-		if (SimpleGUI::Slider(U"明るさ{:.0f}"_fmt(color1.a * 255), color1.a, Vec2{ 50, 280 }, 100, 600)) sl = true;
+		if (SimpleGUI::Slider(U"赤{:.0f}"_fmt(colorRGB.r * 255), colorRGB.r, Vec2{ 50, 160 }, 100, 600)) slider_flag = true;
+		if (SimpleGUI::Slider(U"緑{:.0f}"_fmt(colorRGB.g * 255), colorRGB.g, Vec2{ 50, 200 }, 100, 600)) slider_flag = true;
+		if (SimpleGUI::Slider(U"青{:.0f}"_fmt(colorRGB.b * 255), colorRGB.b, Vec2{ 50, 240 }, 100, 600)) slider_flag = true;
+		if (SimpleGUI::Slider(U"明るさ{:.0f}"_fmt(colorRGB.a * 255), colorRGB.a, Vec2{ 50, 280 }, 100, 600)) slider_flag = true;
 		SimpleGUI::Slider(U"時間{:.2f}秒"_fmt(interval), interval, Vec2{ 50, 320 }, 100, 600);
+		if (SimpleGUI::ColorPicker(colorHSV, Vec2{ 400, 400 }))picker_flag = true;
 
-		color1.r = std::round(color1.r * 255.0) / 255.0;
-		color1.g = std::round(color1.g * 255.0) / 255.0;
-		color1.b = std::round(color1.b * 255.0) / 255.0;
+		// 各値を整数に四捨五入
+		colorRGB.r = std::round(colorRGB.r * 255.0) / 255.0;
+		colorRGB.g = std::round(colorRGB.g * 255.0) / 255.0;
+		colorRGB.b = std::round(colorRGB.b * 255.0) / 255.0;
 		interval = std::round(interval * 100.0) / 100.0;
 
-		if (SimpleGUI::ColorPicker(color0, Vec2{ 400, 400 }))cp = true;
-
-		if (cp) {
-			color1 = color0;
+		// 色が変わったら連動させて色を変える
+		if (picker_flag) {
+			colorRGB = colorHSV;
 		}
-		if (sl) {
-			color0 = color1;
+		else if (slider_flag) {
+			colorHSV = colorRGB;
 		}
 
-		Circle{ 400,80,64 }.draw(ColorF{0});
-		Circle{ 400,80,60 }.draw(color1);
+		// 色のプレビュー表示
+		Circle{ 400,80,64 }.draw(ColorF{ 0 });
+		Circle{ 400,80,60 }.draw(colorRGB);
 
-		if (sl || cp) {
+		// 色を変えたらarduinoに送る
+		if (serial_flag && (slider_flag || picker_flag)) {
 			BYTE r, g, b;
-			r = static_cast<BYTE>(color1.r * 255 * color1.a);
-			g = static_cast<BYTE>(color1.g * 255 * color1.a);
-			b = static_cast<BYTE>(color1.b * 255 * color1.a);
+			r = static_cast<BYTE>(colorRGB.r * 255 * colorRGB.a);
+			g = static_cast<BYTE>(colorRGB.g * 255 * colorRGB.a);
+			b = static_cast<BYTE>(colorRGB.b * 255 * colorRGB.a);
 
-			arduino.send(0);
+			arduino.send(0); // プレビューの時はフラグは0
 			arduino.send(r);
 			arduino.send(g);
 			arduino.send(b);
 		}
-		sl = cp = false;
+		slider_flag = picker_flag = false;
 		pulldown.draw();
+	}
+
+	// arduinoの終了処理
+	if (serial_flag) {
+		arduino.send(0);
+		arduino.send(0);
+		arduino.send(0);
+		arduino.send(0);
+		arduino.close();
 	}
 }
