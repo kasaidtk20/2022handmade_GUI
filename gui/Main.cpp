@@ -252,7 +252,7 @@ void Main() {
 	const Array<String> items = { U"COM0", U"COM1", U"COM2", U"COM3", U"COM4", U"COM5", U"COM6", U"COM7", U"COM8", U"COM9", U"COM10", U"COM11", U"COM12" };
 	bool serial_flag = false;
 	for (auto&& i : Range(0, 12)) { // 通信できるポートを探索
-		if (serial_flag = arduino.init(items[i])) {
+		if ((serial_flag = arduino.init(items[i])) == true) {
 			com_port = i;
 			break;
 		}
